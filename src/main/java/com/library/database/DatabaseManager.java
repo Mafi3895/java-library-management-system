@@ -15,12 +15,13 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.function.Supplier;
 
 /**
- * Manages SQLite JDBC connections and database schema initialization.
+ * Manages SQLite JDBC connections, transaction boundaries, and database schema initialization.
  * Ensures foreign key constraints are enforced on every connection.
  */
-public class DatabaseManager {
+public class DatabaseManager implements TransactionRunner {
 
     public static final String DEFAULT_DATABASE_URL = "jdbc:sqlite:library.db";
     private static final String SCHEMA_RESOURCE_PATH = "/database/schema.sql";
@@ -28,6 +29,7 @@ public class DatabaseManager {
 
     private final String jdbcUrl;
     private final Properties connectionProperties;
+    private final ThreadLocal<Connection> transactionConnection = new ThreadLocal<>();
 
     /**
      * Creates a DatabaseManager using the default persistent SQLite file.
@@ -66,28 +68,72 @@ public class DatabaseManager {
     }
 
     /**
+     * Executes a JDBC operation using the active transaction connection if present,
+     * or a freshly opened connection that is automatically closed afterward.
+     */
+    public <T> T executeWithConnection(SqlFunction<Connection, T> action) {
+        Connection activeTxConnection = transactionConnection.get();
+        if (activeTxConnection != null) {
+            try {
+                return action.apply(activeTxConnection);
+            } catch (SQLException ex) {
+                throw new DatabaseException("Database operation failed within transaction.", ex);
+            }
+        }
+
+        try (Connection connection = getConnection()) {
+            return action.apply(connection);
+        } catch (SQLException ex) {
+            throw new DatabaseException("Database operation failed.", ex);
+        }
+    }
+
+    /**
+     * Executes the given action inside a JDBC transaction.
+     * Commits on normal completion; rolls back on any exception or error.
+     */
+    @Override
+    public <T> T executeInTransaction(Supplier<T> action) {
+        // Re-entrant: if a transaction is already active on this thread, participate in it
+        if (transactionConnection.get() != null) {
+            return action.get();
+        }
+
+        try (Connection connection = getConnection()) {
+            boolean originalAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            transactionConnection.set(connection);
+
+            try {
+                T result = action.get();
+                connection.commit();
+                return result;
+            } catch (Throwable ex) {
+                rollbackQuietly(connection, ex);
+                throw ex;
+            } finally {
+                transactionConnection.remove();
+                restoreAutoCommitQuietly(connection, originalAutoCommit);
+            }
+        } catch (SQLException ex) {
+            throw new DatabaseException("Failed to execute database transaction.", ex);
+        }
+    }
+
+    /**
      * Initializes the database schema from {@code /database/schema.sql} if tables do not yet exist.
      */
     public void initializeDatabase() {
         List<String> statements = loadSchemaStatements();
 
-        try (Connection connection = getConnection()) {
-            boolean originalAutoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
+        executeInTransactionVoid(() -> executeWithConnection(connection -> {
             try (Statement statement = connection.createStatement()) {
                 for (String sql : statements) {
                     statement.execute(sql);
                 }
-                connection.commit();
-            } catch (SQLException ex) {
-                rollbackQuietly(connection, ex);
-                throw new DatabaseException("Failed to initialize database schema.", ex);
-            } finally {
-                restoreAutoCommit(connection, originalAutoCommit);
             }
-        } catch (SQLException ex) {
-            throw new DatabaseException("Failed to connect to database for schema initialization.", ex);
-        }
+            return null;
+        }));
     }
 
     private List<String> loadSchemaStatements() {
@@ -103,7 +149,6 @@ public class DatabaseManager {
             current.append(line).append('\n');
             if (trimmed.endsWith(";")) {
                 String sql = current.toString().trim();
-                // Strip trailing semicolon before executing via JDBC Statement
                 sql = sql.substring(0, sql.length() - 1).trim();
                 if (!sql.isEmpty()) {
                     statements.add(sql);
@@ -137,7 +182,7 @@ public class DatabaseManager {
         }
     }
 
-    private void rollbackQuietly(Connection connection, SQLException primaryException) {
+    private void rollbackQuietly(Connection connection, Throwable primaryException) {
         try {
             connection.rollback();
         } catch (SQLException rollbackEx) {
@@ -145,9 +190,11 @@ public class DatabaseManager {
         }
     }
 
-    private void restoreAutoCommit(Connection connection, boolean originalAutoCommit) {
+    private void restoreAutoCommitQuietly(Connection connection, boolean originalAutoCommit) {
         try {
-            connection.setAutoCommit(originalAutoCommit);
+            if (!connection.isClosed()) {
+                connection.setAutoCommit(originalAutoCommit);
+            }
         } catch (SQLException ex) {
             throw new DatabaseException("Failed to restore auto-commit mode.", ex);
         }
