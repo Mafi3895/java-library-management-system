@@ -56,6 +56,15 @@ class MainTest {
                 "978-0134685991",           // isbn
                 "8",                        // view borrowing history
                 "",                         // all loans
+                "3",                        // search with invalid year
+                "",                         // title
+                "",                         // author
+                "not-a-year",               // invalid year -> handled gracefully
+                "3",                        // search with invalid availability
+                "",                         // title
+                "",                         // author
+                "",                         // year
+                "maybe",                    // invalid availability -> handled gracefully
                 "2",                        // view all books
                 "1",                        // sort by title
                 "1",                        // ascending
@@ -80,6 +89,8 @@ class MainTest {
         assertTrue(output.contains("[Success] Book '978-0134685991' returned on"));
         assertTrue(output.contains("Ali Rezaei"));
         assertTrue(output.contains("RETURNED"));
+        assertTrue(output.contains("[Error] Invalid number: 'not-a-year'."));
+        assertTrue(output.contains("[Error] Invalid availability filter."));
         assertTrue(output.contains("Available"));
         assertTrue(output.contains("Goodbye!"));
     }

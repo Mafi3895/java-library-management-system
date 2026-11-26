@@ -90,7 +90,7 @@ mvn exec:java -Dexec.args="jdbc:sqlite:custom-library.db"
 
 ## 7. How to Run Tests
 
-Execute the entire unit and integration test suite (57 tests):
+Execute the entire unit and integration test suite (60 tests):
 
 ```bash
 mvn clean test

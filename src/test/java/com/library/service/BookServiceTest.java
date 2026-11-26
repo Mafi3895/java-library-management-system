@@ -3,6 +3,7 @@ package com.library.service;
 import com.library.exception.BookAlreadyExistsException;
 import com.library.exception.BookDeletionException;
 import com.library.exception.BookNotFoundException;
+import com.library.exception.DatabaseException;
 import com.library.exception.InvalidBookException;
 import com.library.model.Book;
 import com.library.model.BookSearchCriteria;
@@ -56,6 +57,37 @@ class BookServiceTest {
         // Act & Assert
         assertThrows(BookAlreadyExistsException.class, () ->
                 bookService.registerBook("978-0134685991", "Duplicate Book", "Other Author", 2020));
+    }
+
+    @Test
+    void shouldRejectReusingIsbnOfSoftDeletedBookWithClearMessage() {
+        // Arrange
+        bookService.registerBook("ISBN-DELETED", "Old Edition", "Author", 2010);
+        bookService.deleteBook("ISBN-DELETED");
+
+        // Act & Assert
+        BookAlreadyExistsException ex = assertThrows(BookAlreadyExistsException.class, () ->
+                bookService.registerBook("ISBN-DELETED", "New Edition", "Author", 2022));
+        assertTrue(ex.getMessage().contains("previously deleted"));
+    }
+
+    @Test
+    void shouldTranslateConcurrentUniqueConstraintViolationOnRegister() {
+        // Arrange: simulate concurrent insert violating SQLite books.isbn PRIMARY KEY
+        InMemoryBookRepository concurrentConflictRepo = new InMemoryBookRepository() {
+            @Override
+            public void save(Book book) {
+                throw new DatabaseException(
+                        "Failed to insert book",
+                        new RuntimeException("[SQLITE_CONSTRAINT_PRIMARYKEY] UNIQUE constraint failed: books.isbn")
+                );
+            }
+        };
+        BookService concurrentBookService = new BookService(concurrentConflictRepo, loanRepository);
+
+        // Act & Assert
+        assertThrows(BookAlreadyExistsException.class, () ->
+                concurrentBookService.registerBook("ISBN-RACE", "Race Book", "Author", 2020));
     }
 
     @Test

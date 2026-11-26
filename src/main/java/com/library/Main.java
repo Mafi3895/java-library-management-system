@@ -117,10 +117,7 @@ public class Main {
         String isbn = readLine("ISBN: ");
         String title = readLine("Title: ");
         String author = readLine("Author: ");
-        Integer year = readRequiredInt("Publication year: ");
-        if (year == null) {
-            return;
-        }
+        int year = readRequiredInt("Publication year: ");
 
         Book book = bookService.registerBook(isbn, title, author, year);
         out.println("[Success] Book registered: " + book.getTitle() + " (ISBN: " + book.getIsbn() + ")");
@@ -140,13 +137,7 @@ public class Main {
         String title = readLine("Title contains: ");
         String author = readLine("Author contains: ");
         Integer year = readOptionalInt("Publication year: ");
-        if (year != null && year == Integer.MIN_VALUE) {
-            return;
-        }
         Boolean available = readOptionalAvailability();
-        if (available == null && lastAvailabilityInvalid) {
-            return;
-        }
 
         BookSortField sortField = promptSortField();
         SortDirection sortDirection = promptSortDirection();
@@ -176,18 +167,8 @@ public class Main {
             newAuthor = existing.getAuthor();
         }
 
-        String yearInput = readLine("New publication year [" + existing.getPublicationYear() + "]: ");
-        int newYear;
-        if (yearInput == null || yearInput.trim().isEmpty()) {
-            newYear = existing.getPublicationYear();
-        } else {
-            try {
-                newYear = Integer.parseInt(yearInput.trim());
-            } catch (NumberFormatException ex) {
-                out.println("[Error] Publication year must be a valid integer.");
-                return;
-            }
-        }
+        Integer parsedYear = readOptionalInt("New publication year [" + existing.getPublicationYear() + "]: ");
+        int newYear = parsedYear != null ? parsedYear : existing.getPublicationYear();
 
         Book updated = bookService.updateBook(existing.getIsbn(), newTitle, newAuthor, newYear);
         out.println("[Success] Book updated: " + updated.getTitle() + " (ISBN: " + updated.getIsbn() + ")");
@@ -301,17 +282,15 @@ public class Main {
         return scanner.nextLine();
     }
 
-    private Integer readRequiredInt(String prompt) {
+    private int readRequiredInt(String prompt) {
         String input = readLine(prompt);
         if (input == null || input.trim().isEmpty()) {
-            out.println("[Error] A numeric value is required.");
-            return null;
+            throw new IllegalArgumentException("A numeric value is required.");
         }
         try {
             return Integer.parseInt(input.trim());
         } catch (NumberFormatException ex) {
-            out.println("[Error] Invalid number: '" + input.trim() + "'.");
-            return null;
+            throw new IllegalArgumentException("Invalid number: '" + input.trim() + "'.");
         }
     }
 
@@ -323,15 +302,11 @@ public class Main {
         try {
             return Integer.parseInt(input.trim());
         } catch (NumberFormatException ex) {
-            out.println("[Error] Invalid number: '" + input.trim() + "'.");
-            return Integer.MIN_VALUE;
+            throw new IllegalArgumentException("Invalid number: '" + input.trim() + "'.");
         }
     }
 
-    private boolean lastAvailabilityInvalid;
-
     private Boolean readOptionalAvailability() {
-        lastAvailabilityInvalid = false;
         String input = readLine("Availability (available/borrowed, leave blank for all): ");
         if (input == null || input.trim().isEmpty()) {
             return null;
@@ -343,9 +318,7 @@ public class Main {
         if (normalized.equals("borrowed") || normalized.equals("b") || normalized.equals("false") || normalized.equals("no")) {
             return Boolean.FALSE;
         }
-        lastAvailabilityInvalid = true;
-        out.println("[Error] Invalid availability filter. Enter 'available', 'borrowed', or leave blank.");
-        return null;
+        throw new IllegalArgumentException("Invalid availability filter. Enter 'available', 'borrowed', or leave blank.");
     }
 
     private String truncate(String value, int maxLength) {

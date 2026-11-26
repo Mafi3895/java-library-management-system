@@ -8,4 +8,8 @@ public class BookAlreadyExistsException extends LibraryException {
     public BookAlreadyExistsException(String message) {
         super(message);
     }
+
+    public BookAlreadyExistsException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

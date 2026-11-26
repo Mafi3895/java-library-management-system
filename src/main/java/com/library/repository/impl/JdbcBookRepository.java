@@ -84,12 +84,12 @@ public class JdbcBookRepository implements BookRepository {
         List<Object> parameters = new ArrayList<>();
 
         if (effectiveCriteria.getTitle() != null) {
-            sql.append(" AND LOWER(title) LIKE LOWER(?)");
-            parameters.add("%" + effectiveCriteria.getTitle() + "%");
+            sql.append(" AND LOWER(title) LIKE LOWER(?) ESCAPE '\\'");
+            parameters.add("%" + escapeLikePattern(effectiveCriteria.getTitle()) + "%");
         }
         if (effectiveCriteria.getAuthor() != null) {
-            sql.append(" AND LOWER(author) LIKE LOWER(?)");
-            parameters.add("%" + effectiveCriteria.getAuthor() + "%");
+            sql.append(" AND LOWER(author) LIKE LOWER(?) ESCAPE '\\'");
+            parameters.add("%" + escapeLikePattern(effectiveCriteria.getAuthor()) + "%");
         }
         if (effectiveCriteria.getPublicationYear() != null) {
             sql.append(" AND publication_year = ?");
@@ -202,6 +202,13 @@ public class JdbcBookRepository implements BookRepository {
         String dir = direction == SortDirection.DESC ? "DESC" : "ASC";
 
         return column + " " + dir + ", isbn ASC";
+    }
+
+    private String escapeLikePattern(String raw) {
+        return raw
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private Book mapRow(ResultSet rs) throws SQLException {

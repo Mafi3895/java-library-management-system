@@ -3,6 +3,7 @@ package com.library.service;
 import com.library.exception.BookAlreadyExistsException;
 import com.library.exception.BookDeletionException;
 import com.library.exception.BookNotFoundException;
+import com.library.exception.DatabaseException;
 import com.library.exception.InvalidBookException;
 import com.library.model.Book;
 import com.library.model.BookSearchCriteria;
@@ -12,6 +13,7 @@ import com.library.repository.BookRepository;
 import com.library.repository.LoanRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Service layer responsible for book catalog business rules and operations.
@@ -38,13 +40,29 @@ public class BookService {
     public Book registerBook(String isbn, String title, String author, int publicationYear) {
         Book book = new Book(isbn, title, author, publicationYear);
 
-        if (bookRepository.existsByIsbn(book.getIsbn())) {
+        Optional<Book> existing = bookRepository.findByIsbn(book.getIsbn());
+        if (existing.isPresent()) {
+            if (existing.get().isDeleted()) {
+                throw new BookAlreadyExistsException(
+                        "A book with ISBN '" + book.getIsbn() + "' was previously deleted and its ISBN cannot be reused."
+                );
+            }
             throw new BookAlreadyExistsException(
                     "A book with ISBN '" + book.getIsbn() + "' is already registered."
             );
         }
 
-        bookRepository.save(book);
+        try {
+            bookRepository.save(book);
+        } catch (DatabaseException ex) {
+            if (isUniqueIsbnConstraintViolation(ex)) {
+                throw new BookAlreadyExistsException(
+                        "A book with ISBN '" + book.getIsbn() + "' was concurrently registered.",
+                        ex
+                );
+            }
+            throw ex;
+        }
         return book;
     }
 
@@ -136,5 +154,17 @@ public class BookService {
         }
 
         bookRepository.delete(existing.getIsbn());
+    }
+
+    private boolean isUniqueIsbnConstraintViolation(DatabaseException ex) {
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            String message = cause.getMessage();
+            if (message != null && message.contains("UNIQUE constraint failed") && message.contains("books.isbn")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 }

@@ -144,4 +144,29 @@ class JdbcBookRepositoryTest {
         List<Book> byYearDesc = bookRepository.findAll(BookSortField.PUBLICATION_YEAR, SortDirection.DESC);
         assertEquals(List.of("ISBN-1", "ISBN-2", "ISBN-3"), byYearDesc.stream().map(Book::getIsbn).toList());
     }
+
+    @Test
+    void shouldTreatPercentAndUnderscoreAsLiteralCharactersInSearch() {
+        // Arrange
+        bookRepository.save(new Book("ISBN-PCT", "100% Java Mastery", "Author_One", 2021));
+        bookRepository.save(new Book("ISBN-PLAIN", "Java Basics", "Author Two", 2021));
+
+        // Act: searching for literal '%' must not match 'Java Basics'
+        List<Book> percentMatches = bookRepository.search(
+                new BookSearchCriteria("%", null, null, null),
+                BookSortField.TITLE,
+                SortDirection.ASC
+        );
+        List<Book> underscoreMatches = bookRepository.search(
+                new BookSearchCriteria(null, "_", null, null),
+                BookSortField.TITLE,
+                SortDirection.ASC
+        );
+
+        // Assert
+        assertEquals(1, percentMatches.size());
+        assertEquals("ISBN-PCT", percentMatches.get(0).getIsbn());
+        assertEquals(1, underscoreMatches.size());
+        assertEquals("ISBN-PCT", underscoreMatches.get(0).getIsbn());
+    }
 }
